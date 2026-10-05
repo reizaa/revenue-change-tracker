@@ -1,0 +1,174 @@
+{
+  "name": "Revenue - daily snapshot",
+  "nodes": [
+    {
+      "name": "Every day 08:55",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "55 8 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Fetch revenue per account",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BI_BASE_URL}}/api/card/{{$env.REVENUE_QUESTION_ID}}/query/json",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "BI API key"
+        }
+      }
+    },
+    {
+      "name": "Guard: row count",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// A half-empty extract would look like mass churn tomorrow, so stop here instead.\nconst MIN_ROWS = 100;\nconst rows = $input.all().map(i => i.json);\nif (rows.length < MIN_ROWS) {\n  throw new Error(`only ${rows.length} rows (< ${MIN_ROWS}) - snapshot skipped, old slot kept`);\n}\n\nconst today = $now.toFormat('yyyy-MM-dd');\nconst slot = 'day_' + $now.toFormat('dd');\n// first column = snapshot date, so the diff job can tell a fresh slot from last month's\nconst values = rows.map(r => [today, r.account_id, r.plan_tier, r.currency,\n                              r.local_monthly, r.fx_rate, r.monthly_revenue]);\nreturn [{ json: { slot, today, values, count: rows.length } }];"
+      }
+    },
+    {
+      "name": "Clear today's slot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{$env.SNAPSHOT_SHEET_ID}}/values/{{$json.slot}}!A2:H:clear",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi"
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Sheets service account"
+        }
+      }
+    },
+    {
+      "name": "Append rows (one request)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{$env.SNAPSHOT_SHEET_ID}}/values/{{$('Guard: row count').item.json.slot}}!A2:append?valueInputOption=RAW",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { values: $('Guard: row count').item.json.values } }}"
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Sheets service account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every day 08:55": {
+      "main": [
+        [
+          {
+            "node": "Fetch revenue per account",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch revenue per account": {
+      "main": [
+        [
+          {
+            "node": "Guard: row count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: row count": {
+      "main": [
+        [
+          {
+            "node": "Clear today's slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear today's slot": {
+      "main": [
+        [
+          {
+            "node": "Append rows (one request)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "errorWorkflow": "REPLACE_WITH_ERROR_HANDLER_ID"
+  }
+}

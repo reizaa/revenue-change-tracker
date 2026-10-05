@@ -1,0 +1,249 @@
+{
+  "name": "Revenue - daily diff + Slack pulse",
+  "nodes": [
+    {
+      "name": "Every day 09:05",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 9 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Read today slot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{$env.SNAPSHOT_SHEET_ID}}/values/day_{{$now.toFormat('dd')}}!A2:H",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi"
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Sheets service account"
+        }
+      }
+    },
+    {
+      "name": "Read yesterday slot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{$env.SNAPSHOT_SHEET_ID}}/values/day_{{$now.minus({days: 1}).toFormat('dd')}}!A2:H",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi"
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Sheets service account"
+        }
+      }
+    },
+    {
+      "name": "Diff + top movers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Same rules as src/diff.py. If you change one, change the other and run both on the\n// same snapshot - the category totals should match exactly.\nconst today = $now.toFormat('yyyy-MM-dd');\nconst yesterday = $now.minus({ days: 1 }).toFormat('yyyy-MM-dd');\nconst cur = $('Read today slot').first().json.values ?? [];\nconst base = $('Read yesterday slot').first().json.values ?? [];\n\nconst fresh = (rows, d) => rows.length > 0 && rows[0][0] === d;\nif (!fresh(cur, today) || !fresh(base, yesterday)) {\n  // better no message than a \"daily\" number that silently covers two days\n  throw new Error('snapshot date mismatch - a slot is missing or stale');\n}\n\nconst byId = rows => Object.fromEntries(\n  rows.map(r => [r[1], { local: +r[4], mrr: +r[6] }]));\nconst B = byId(base), C = byId(cur);\n\nconst moves = [];\nfor (const id of new Set([...Object.keys(B), ...Object.keys(C)])) {\n  const b = B[id], c = C[id];\n  const before = (b?.mrr ?? 0) * 12, now = (c?.mrr ?? 0) * 12;\n  let cat = 'unchanged';\n  if (!before && now) cat = 'new';\n  else if (before && !now) cat = 'churn';\n  else if (c.local > b.local) cat = 'upgrade';\n  else if (c.local < b.local) cat = 'downgrade';\n  else if (now !== before) cat = 'fx_only';      // same contract, exchange rate moved\n  moves.push({ id, cat, diff: now - before });\n}\n\nconst fmt = v => (v < 0 ? '-' : '+') + Math.abs(Math.round(v)).toLocaleString('en-US');\nconst total = cat => moves.filter(m => m.cat === cat).reduce((s, m) => s + m.diff, 0);\nconst lines = ['new', 'upgrade', 'downgrade', 'churn'].map(cat => {\n  const rows = moves.filter(m => m.cat === cat)\n                    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));\n  if (!rows.length) return null;\n  const top = rows.slice(0, 5).map(m => '`' + m.id + '` ' + fmt(m.diff)).join(', ');\n  return `*${cat}* - ${rows.length} accounts, ${fmt(total(cat))}\\n      ${top}`;\n}).filter(Boolean);\n\nconst net = moves.reduce((s, m) => s + m.diff, 0);\nreturn [{ json: {\n  text: `*Revenue movers* - ${today} vs ${yesterday}\\nnet ${fmt(net)}\\n` + lines.join('\\n'),\n} }];"
+      }
+    },
+    {
+      "name": "Find today's KPI post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://slack.com/api/conversations.history",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "channel",
+              "value": "={{$env.PULSE_CHANNEL_ID}}"
+            },
+            {
+              "name": "oldest",
+              "value": "={{$today.toSeconds()}}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "REPLACE_ME",
+          "name": "Slack bot"
+        }
+      }
+    },
+    {
+      "name": "Pick thread",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Reply under today's KPI post when it's there; if it isn't (yet), post to the channel.\nconst msgs = $input.first().json.messages ?? [];\nconst parent = [...msgs].reverse()\n  .find(m => (m.text ?? '').toLowerCase().includes('daily revenue'));\nreturn [{ json: { ...$('Diff + top movers').first().json, thread_ts: parent?.ts ?? '' } }];"
+      }
+    },
+    {
+      "name": "Post pulse",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{$env.PULSE_CHANNEL_ID}}"
+        },
+        "text": "={{$json.text}}",
+        "otherOptions": {
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{$json.thread_ts}}"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "REPLACE_ME",
+          "name": "Slack bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every day 09:05": {
+      "main": [
+        [
+          {
+            "node": "Read today slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read today slot": {
+      "main": [
+        [
+          {
+            "node": "Read yesterday slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read yesterday slot": {
+      "main": [
+        [
+          {
+            "node": "Diff + top movers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diff + top movers": {
+      "main": [
+        [
+          {
+            "node": "Find today's KPI post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find today's KPI post": {
+      "main": [
+        [
+          {
+            "node": "Pick thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick thread": {
+      "main": [
+        [
+          {
+            "node": "Post pulse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "errorWorkflow": "REPLACE_WITH_ERROR_HANDLER_ID"
+  }
+}
