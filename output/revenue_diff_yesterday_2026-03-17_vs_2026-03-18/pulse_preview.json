@@ -1,0 +1,28 @@
+{
+  "text": "Revenue movers 2026-03-18: net +39,866",
+  "blocks": [
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Revenue movers* - 2026-03-18 vs 2026-03-17 (yesterday)\nARR 2,331,546 (net +39,866)"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": ":large_green_circle: *new* - 3 accounts, +76,997\n      `company_132` +75,288, `company_133` +900, `company_134` +809\n:arrow_up: *upgrade* - 1 accounts, +1,488\n      `company_065` +1,488\n:arrow_down: *downgrade* - 2 accounts, -22,045\n      `company_130` -20,324, `company_048` -1,721\n:red_circle: *churn* - 2 accounts, -5,763\n      `company_077` -5,163, `company_060` -600\n:currency_exchange: *fx only* - 24 accounts, -10,812 (exchange rate, no plan change)"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Bridge check: OK | annual value = monthly x 12 | top 5 per category, full list in the report"
+        }
+      ]
+    }
+  ]
+}

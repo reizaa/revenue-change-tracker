@@ -3,6 +3,7 @@
     python src/main.py snapshot --today 2026-03-18
     python src/main.py diff --baseline month-start --today 2026-03-18
     python src/main.py diff --baseline yesterday   --today 2026-03-18
+    python src/main.py pulse --baseline yesterday  --today 2026-03-18 [--send]
 
 `--baseline` is required on purpose: "compared to what?" changes the answer
 completely, so the tool refuses to guess.
@@ -15,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 
 import diff
+import pulse
 import snapshot
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,14 +94,20 @@ def main() -> None:
     d = sub.add_parser("diff")
     d.add_argument("--baseline", choices=["month-start", "yesterday"], required=True)
     d.add_argument("--today", type=date.fromisoformat, default=date.today())
+    u = sub.add_parser("pulse", help="diff + Slack message (dry-run unless --send)")
+    u.add_argument("--baseline", choices=["month-start", "yesterday"], required=True)
+    u.add_argument("--today", type=date.fromisoformat, default=date.today())
+    u.add_argument("--send", action="store_true")
     a = p.parse_args()
     if a.cmd == "snapshot":
         status = snapshot.take_snapshot(fetch_live, STORE, a.today, PENDING)
         print(status)
         # non-zero exit lets the scheduler's error handler send an alert
         raise SystemExit(1 if status.split(":")[0].endswith(("ABORT", "PENDING")) else 0)
-    else:
+    elif a.cmd == "diff":
         run_diff(a.baseline, a.today)
+    else:
+        print(pulse.run(run_diff(a.baseline, a.today), a.today, a.send))
 
 
 if __name__ == "__main__":
