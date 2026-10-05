@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Revenue Movers Walkthrough</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f6f4; --surface: #fcfcfb; --border: #e3e2de;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974; --grid: #ecebe7;
+  --pos: #2a78d6; --neg: #e34948; --neutral: #a3a29c; --accent: #eb6834;
+  --good: #1c7c3a; --warn: #9a6500; --bad: #c03a39;
+  --code-bg: #f0efec; --slack-bg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --border: #2e2e2b;
+    --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86; --grid: #2a2a27;
+    --pos: #3987e5; --neg: #e66767; --neutral: #6f6e68; --accent: #d95926;
+    --good: #4cb36a; --warn: #e0a83a; --bad: #e66767;
+    --code-bg: #2b2b28; --slack-bg: #1f1f1d;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --border: #2e2e2b;
+  --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86; --grid: #2a2a27;
+  --pos: #3987e5; --neg: #e66767; --neutral: #6f6e68; --accent: #d95926;
+  --good: #4cb36a; --warn: #e0a83a; --bad: #e66767;
+  --code-bg: #2b2b28; --slack-bg: #1f1f1d;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
+h2 { font-size: 18px; margin: 0 0 4px; }
+h3 { font-size: 14px; margin: 0 0 8px; }
+p.lead { color: var(--text-2); margin: 0 0 28px; max-width: 70ch; }
+.sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 18px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+.tile .label { color: var(--text-2); font-size: 13px; }
+.tile .value { font-size: 28px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.tile .delta { font-size: 13px; color: var(--text-2); }
+.chart-box { position: relative; height: 260px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-top: 10px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
+.grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+table.movers { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.movers td { padding: 4px 0; border-bottom: 1px solid var(--grid); }
+table.movers td:last-child { text-align: right; }
+table.movers tr:last-child td { border-bottom: 0; }
+.tier { color: var(--muted); font-size: 12px; margin-left: 6px; }
+.lane { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 12px; background: var(--bg); }
+.lane-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; }
+.badge { font-size: 11px; font-weight: 600; color: var(--text-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.node { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 6px 10px; background: var(--surface); font-size: 12px; }
+.node small { display: block; color: var(--muted); }
+.node.guard { border-left-color: var(--warn); }
+.node.slack { border-left-color: var(--pos); }
+.arrow { color: var(--muted); }
+ul.log { list-style: none; margin: 0; padding: 0; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+ul.log li { padding: 6px 0; border-bottom: 1px solid var(--grid); display: flex; gap: 10px; }
+ul.log li:last-child { border-bottom: 0; }
+.st { flex: none; width: 74px; font-weight: 700; }
+.st.OK { color: var(--good); } .st.SKIP { color: var(--muted); } .st.ABORT, .st.WARNING { color: var(--bad); } .st.PENDING { color: var(--warn); }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+.slack { background: var(--slack-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; font-size: 14px; }
+.post { display: flex; gap: 10px; }
+.avatar { width: 34px; height: 34px; border-radius: 8px; color: #fff; display: grid; place-items: center; font-weight: 700; flex: none; }
+.who { font-weight: 700; } .who small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.thread { margin: 10px 0 0 44px; padding-left: 12px; border-left: 2px solid var(--border); }
+.thread-label { color: var(--pos); font-size: 12px; font-weight: 600; margin: 8px 0 8px 44px; }
+.msg { white-space: pre-wrap; }
+.ctx { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.slack code { background: var(--code-bg); border-radius: 4px; padding: 0 4px; font-size: 12px; }
+footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Who moved the revenue?</h1>
+  <p class="lead">Every morning a revenue number goes out, and somebody always asks which accounts
+    caused the move. This page walks through the tracker on synthetic data: the comparison
+    against yesterday's snapshot, the guards that keep that snapshot honest, the n8n flow
+    that runs it, and the reply it posts in Slack.</p>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section class="card">
+    <h2>Annualized change by category</h2>
+    <p class="sub">Monthly revenue × 12, current day vs the previous snapshot. Exchange-rate-only moves are split out so they don't pass as downgrades.</p>
+    <div class="chart-box"><canvas id="bars" aria-label="Bar chart of annual revenue change per category"></canvas></div>
+    <div class="legend"><span><i style="background:var(--pos)"></i>gain</span><span><i style="background:var(--neg)"></i>loss</span><span><i style="background:var(--neutral)"></i>exchange rate only</span></div>
+  </section>
+
+  <section class="card">
+    <h2>Top movers</h2>
+    <p class="sub">Top 5 per category in the message, top 15 in the report.</p>
+    <div class="grid4" id="movers"></div>
+  </section>
+
+  <section class="card">
+    <h2>The n8n flow</h2>
+    <p class="sub">Two scheduled workflows ten minutes apart, plus an error handler so a failure never stays silent.</p>
+    <div class="lane"><div class="lane-title">Daily snapshot <span class="badge">08:55</span></div><div class="flow" id="f1"></div></div>
+    <div class="lane"><div class="lane-title">Diff + Slack pulse <span class="badge">09:05</span></div><div class="flow" id="f2"></div></div>
+    <div class="lane"><div class="lane-title">Error handler <span class="badge">on failure</span></div><div class="flow" id="f3"></div></div>
+  </section>
+
+  <div class="split">
+    <section class="card">
+      <h2>Guards, replayed</h2>
+      <p class="sub">Output of <code>src/simulate_days.py</code>: five scheduler runs and three baseline lookups.</p>
+      <ul class="log" id="log"></ul>
+    </section>
+    <section class="card">
+      <h2>The Slack pulse</h2>
+      <p class="sub">Posted as a reply under the morning KPI message.</p>
+      <div class="slack" id="slack"></div>
+    </section>
+  </div>
+
+  <footer>All accounts and amounts on this page are synthetic, generated by <code>data/generate_dummy_data.py</code>.</footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const D = {"head": {"baseline": "2026-03-17 (yesterday)", "current": "2026-03-18", "baseline ARR": "2291680.08", "current ARR": "2331546.0", "bridge check": "OK", "note": "baseline 2026-03-17 (yesterday)"}, "summary": [{"category": "new", "accounts": 3, "annual_diff": 76997.4, "price_effect": 76997.4, "fx_effect": 0.0}, {"category": "upgrade", "accounts": 1, "annual_diff": 1488.0, "price_effect": 1488.0, "fx_effect": 0.0}, {"category": "downgrade", "accounts": 2, "annual_diff": -22044.96, "price_effect": -20007.0, "fx_effect": -2037.96}, {"category": "churn", "accounts": 2, "annual_diff": -5762.64, "price_effect": -5762.64, "fx_effect": 0.0}, {"category": "fx_only", "accounts": 24, "annual_diff": -10811.88, "price_effect": 0.0, "fx_effect": -10811.88}, {"category": "unchanged", "accounts": 89, "annual_diff": 0.0, "price_effect": 0.0, "fx_effect": 0.0}, {"category": "TOTAL", "accounts": 121, "annual_diff": 39865.92, "price_effect": 52715.76, "fx_effect": -12849.84}], "tops": {"new": [{"account_id": "company_132", "plan_tier": "enterprise", "annual_diff": 75288.0}, {"account_id": "company_133", "plan_tier": "starter", "annual_diff": 900.0}, {"account_id": "company_134", "plan_tier": "starter", "annual_diff": 809.4000000000001}], "upgrade": [{"account_id": "company_065", "plan_tier": "growth", "annual_diff": 1488.0}], "downgrade": [{"account_id": "company_130", "plan_tier": "enterprise", "annual_diff": -20323.92}, {"account_id": "company_048", "plan_tier": "growth", "annual_diff": -1721.04}], "churn": [{"account_id": "company_077", "plan_tier": "growth", "annual_diff": -5162.64}, {"account_id": "company_060", "plan_tier": "starter", "annual_diff": -600.0}]}, "guards": ["03-18 08:55 scheduled run        OK: 119 rows -> day_18.csv", "03-18 09:30 manual re-run        SKIP: snapshot for today already taken", "03-19 08:55 partial extract      ABORT: only 50 rows (< 100), slot left untouched", "03-19 09:10 retry, file locked   PENDING: day_19.csv is open in another program; parked in pending/ for the next run", "03-20 08:55 scheduled run        flushed pending ['2026-03-19']; OK: 119 rows -> day_20.csv", "diff on 2026-03-20 vs yesterday   -> day_19.csv: baseline 2026-03-19 (yesterday)", "diff on 2026-03-15 vs yesterday   -> day_01.csv: WARNING: slot for 2026-03-14 is missing or stale; using 2026-03-01 instead - this diff covers 14 days, not a normal yesterday diff", "diff on 2026-03-20 vs month-start -> day_01.csv: baseline 2026-03-01 (month-start)"], "pulse": {"text": "Revenue movers 2026-03-18: net +39,866", "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": "*Revenue movers* - 2026-03-18 vs 2026-03-17 (yesterday)\nARR 2,331,546 (net +39,866)"}}, {"type": "section", "text": {"type": "mrkdwn", "text": ":large_green_circle: *new* - 3 accounts, +76,997\n      `company_132` +75,288, `company_133` +900, `company_134` +809\n:arrow_up: *upgrade* - 1 accounts, +1,488\n      `company_065` +1,488\n:arrow_down: *downgrade* - 2 accounts, -22,045\n      `company_130` -20,324, `company_048` -1,721\n:red_circle: *churn* - 2 accounts, -5,763\n      `company_077` -5,163, `company_060` -600\n:currency_exchange: *fx only* - 24 accounts, -10,812 (exchange rate, no plan change)"}}, {"type": "context", "elements": [{"type": "mrkdwn", "text": "Bridge check: OK | annual value = monthly x 12 | top 5 per category, full list in the report"}]}]}};
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const money = v => (v < 0 ? '−' : '+') + Math.abs(Math.round(v)).toLocaleString('en-US');
+const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const S = Object.fromEntries(D.summary.map(r => [r.category, r]));
+
+const moved = ['new', 'upgrade', 'downgrade', 'churn'].reduce((n, c) => n + (S[c]?.accounts ?? 0), 0);
+document.getElementById('tiles').innerHTML = [
+  ['Current ARR', Math.round(+D.head['current ARR']).toLocaleString('en-US'), D.head.current],
+  ['Net change vs yesterday', money(S.TOTAL.annual_diff), `price ${money(S.TOTAL.price_effect)} · FX ${money(S.TOTAL.fx_effect)}`],
+  ['Accounts that moved', moved, `+ ${S.fx_only?.accounts ?? 0} exchange-rate only`],
+  ['Bridge check', D.head['bridge check'] === 'OK' ? '✓ OK' : '✗ failed', 'baseline + changes = current'],
+].map(([l, v, d]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="delta">${esc(d)}</div></div>`).join('');
+
+let chart;
+function draw() {
+  if (chart) chart.destroy();
+  const cats = ['new', 'upgrade', 'downgrade', 'churn', 'fx_only'];
+  const vals = cats.map(c => S[c]?.annual_diff ?? 0);
+  const col = cats.map((c, i) => c === 'fx_only' ? css('--neutral') : vals[i] >= 0 ? css('--pos') : css('--neg'));
+  chart = new Chart(document.getElementById('bars'), {
+    type: 'bar',
+    data: { labels: ['new', 'upgrade', 'downgrade', 'churn', 'fx only'], datasets: [{ data: vals, backgroundColor: col,
+      borderRadius: 4, borderSkipped: false, maxBarThickness: 46 }] },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: c => `${money(c.parsed.y)} / year · ${S[cats[c.dataIndex]]?.accounts ?? 0} accounts` } } },
+      scales: { x: { grid: { display: false }, ticks: { color: css('--text-2') } },
+        y: { grid: { color: c => c.tick.value === 0 ? css('--muted') : css('--grid') }, border: { display: false },
+          ticks: { color: css('--text-2'), callback: v => money(v) } } } }
+  });
+}
+draw();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+
+document.getElementById('movers').innerHTML = Object.entries(D.tops).map(([cat, rows]) => `<div>
+  <h3>${cat} <span class="tier">${S[cat]?.accounts ?? 0} accounts</span></h3>
+  <table class="movers">${rows.length ? rows.map(r => `<tr><td>${esc(r.account_id)}<span class="tier">${esc(r.plan_tier)}</span></td><td>${money(r.annual_diff)}</td></tr>`).join('') : '<tr><td class="tier">none</td><td></td></tr>'}</table></div>`).join('');
+
+const flow = (id, nodes) => document.getElementById(id).innerHTML = nodes.map(([k, t, s]) =>
+  `<div class="node ${k}">${t}<small>${s}</small></div>`).join('<span class="arrow">→</span>');
+flow('f1', [['', 'Schedule', 'cron 08:55'], ['', 'HTTP', 'BI query → revenue per account'],
+  ['guard', 'Code: row-count guard', 'abort if &lt; minimum'], ['', 'HTTP', 'clear today\'s slot'], ['', 'HTTP', 'append rows in ONE request']]);
+flow('f2', [['', 'Schedule', 'cron 09:05'], ['', 'HTTP', 'read today + yesterday slots'],
+  ['guard', 'Code: date check + diff', 'stop if a slot is stale'], ['slack', 'Slack API', 'find today\'s KPI post'],
+  ['', 'Code', 'pick thread'], ['slack', 'Slack', 'reply with top movers']]);
+flow('f3', [['', 'Error trigger', 'any workflow fails'], ['slack', 'Slack', 'DM the owner with the error']]);
+
+document.getElementById('log').innerHTML = D.guards.map(l => {
+  const m = l.match(/\b(OK|SKIP|ABORT|PENDING|WARNING)\b/); const st = m ? m[1] : 'OK';
+  return `<li><span class="st ${st}">${st}</span><span>${esc(l)}</span></li>`;
+}).join('');
+
+const EMOJI = { ':large_green_circle:': '🟢', ':arrow_up:': '⬆️', ':arrow_down:': '⬇️', ':red_circle:': '🔴', ':currency_exchange:': '💱', ':warning:': '⚠️' };
+const md = t => esc(t).replace(/:[a-z_]+:/g, m => EMOJI[m] ?? m).replace(/\*([^*]+)\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+const b = D.pulse.blocks;
+document.getElementById('slack').innerHTML = `
+  <div class="post"><div class="avatar" style="background:var(--neutral)">K</div><div>
+    <div class="who">kpi-bot<small>09:00</small></div>
+    <div class="msg">📈 <b>Daily revenue</b> — ARR ${Math.round(+D.head['current ARR']).toLocaleString('en-US')}</div></div></div>
+  <div class="thread-label">1 reply</div>
+  <div class="thread"><div class="post"><div class="avatar" style="background:var(--pos)">R</div><div>
+    <div class="who">revenue-bot<small>09:05</small></div>
+    <div class="msg">${b.filter(x => x.type === 'section').map(x => md(x.text.text)).join('\n\n')}</div>
+    <div class="ctx">${b.filter(x => x.type === 'context').map(x => md(x.elements[0].text)).join('')}</div></div></div></div>`;
+</script>
+</body>
+</html>

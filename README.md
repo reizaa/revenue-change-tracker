@@ -1,141 +1,145 @@
-# Recurring Revenue Change Tracker
+# revenue-change-tracker
 
-## Overview
-Compares the current recurring revenue of every account with a previous snapshot
-(start of month or yesterday), classifies each account as **new / upgrade / downgrade /
-churn**, lists the top 15 accounts per category by annualized difference and writes a
-summary workbook. A small snapshot job with guards keeps one reliable snapshot per day
-so the "vs yesterday" comparison is always what it claims to be.
+Every morning a recurring-revenue number goes out to the team, and the first reply is
+always *"it moved - because of whom?"*. This compares today's revenue per account with
+a previous snapshot (yesterday or start of month), sorts every account into
+**new / upgrade / downgrade / churn**, and posts the top movers as a Slack thread reply.
+A small n8n setup takes the daily snapshot and runs the diff, with guards so the
+"daily" comparison really is daily.
 
-All data is synthetic (fictional accounts `company_001` ...).
+All data is synthetic (`company_001`, ...).
+**Walkthrough page:** `docs/index.html` (GitHub Pages ready).
 
-## Problem
-A daily revenue number posted to a team channel always triggers the same question:
-*"it moved - because of whom?"* Answering it needs a trustworthy previous snapshot, but
-in practice:
+## What went wrong before (and what the guards are for)
 
-- a scheduled job silently fails one day, and the next "daily" diff actually spans two days;
-- snapshot slots named by day-of-month get re-used each month, so a stale slot from last
-  month looks like yesterday;
-- a partial extract makes dozens of healthy accounts look churned;
-- accounts billed in a foreign currency move with the exchange rate, which looks like a
-  wave of downgrades although nobody changed plan.
+The diff itself is easy. Keeping a trustworthy *previous* snapshot was the hard part:
 
-## Approach
-```mermaid
-flowchart TB
-    subgraph Daily snapshot job  [08:55]
-      S1[fetch live revenue per account] --> S2{already taken today?}
-      S2 -- yes --> SK[skip]
-      S2 -- no --> S3{row count >= minimum?}
-      S3 -- no --> AB[abort, keep old slot, alert]
-      S3 -- yes --> S4[write slot atomically<br/>+ snapshot_date marker]
-      S4 -- file locked --> PE[park in pending/<br/>flush on next run]
-    end
-    subgraph Diff job  [09:05]
-      D1{baseline marker = expected date?} -- no --> D2[fall back to latest valid<br/>snapshot and state real span]
-      D1 -- yes --> D3[compare per account]
-      D2 --> D3
-      D3 --> D4[split price effect vs FX effect]
-      D4 --> D5[classify + top 15 per category]
-      D5 --> D6[summary + bridge check<br/>baseline ARR + diffs = current ARR]
-    end
-    S4 --> D1
-```
+- the scheduled job failed quietly one day, so the next "daily" diff actually covered
+  two days and nobody noticed;
+- snapshot slots were named by day of month (`day_18`), and a slot left over from last
+  month looks exactly like yesterday's;
+- a half-empty extract made dozens of healthy accounts look churned;
+- accounts billed in a foreign currency moved with the exchange rate - which looked like
+  a wave of downgrades even though nobody touched their plan.
 
-**Classification** (annualized value = monthly revenue x 12):
+So: every snapshot row carries its date, the job aborts below a minimum row count, the
+diff refuses a stale slot (or falls back and says how many days it really covers), and
+exchange-rate effects get their own `fx_only` bucket.
+
+## The rules
+
+Annual value = monthly revenue x 12.
 
 | category | rule |
 |---|---|
-| new | absent or zero in the baseline, positive now |
-| churn | positive in the baseline, absent or zero now |
-| upgrade / downgrade | positive in both, contract amount (local currency) went up / down |
-| fx_only | contract amount unchanged, value moved only because of the exchange rate |
+| new | nothing in the baseline, positive now |
+| churn | positive in the baseline, nothing now |
+| upgrade / downgrade | contract amount (in its own currency) went up / down |
+| fx_only | same contract amount, value moved only because of the exchange rate |
 
-For accounts present in both snapshots the diff is split into a **price effect** and an
-**FX effect** (`local amount x (rate now - rate before) x 12`), so the report separates
-real business movement from currency revaluation.
+For accounts in both snapshots the change is split into a **price effect** and an
+**FX effect**. Bridge check: `baseline ARR + all changes = current ARR`, otherwise the
+report says FAILED.
 
-**Automation design.** Two scheduled jobs (cron, or an n8n-style workflow with a schedule
-trigger) plus an error handler:
+## n8n flow
 
-1. *Snapshot* - fetch, guard on row count, write the day's slot, then write the date
-   marker. The marker step is not optional: if the write step only touches data rows,
-   the slot keeps last month's date and the diff job will (correctly) refuse it.
-2. *Diff* - runs a few minutes later, validates the baseline marker, computes the diff
-   and posts the top movers to a chat thread.
-3. *Error handler* - any non-zero exit sends an alert, so failures are never silent.
+Three workflows. Both scheduled ones point their *error workflow* setting at the third,
+so any failure ends up as a DM instead of a missing message nobody notices.
 
-`automation/crontab.example` shows the schedule; `src/snapshot.py` implements the guards.
-
-## Project structure
-```
-data/generate_dummy_data.py    seeded synthetic snapshots + live extract
-data/source_current.csv        "live" revenue per account (today = 2026-03-18)
-data/snapshots/day_XX.csv      daily slots; day_18 is a stale slot from last month
-src/diff.py                    compare, classify, FX split, top 15, summary
-src/snapshot.py                snapshot job + guards + baseline lookup
-src/main.py                    CLI: snapshot | diff --baseline month-start|yesterday
-src/simulate_days.py           replays several days to show every guard firing
-automation/                    cron example + alert hook placeholder
-output/                        example results from the dummy data
+```mermaid
+flowchart LR
+  subgraph S["1 - Daily snapshot (08:55)"]
+    a1[Schedule] --> a2[HTTP: BI query<br/>revenue per account] --> a3[Code: row-count guard]
+    a3 --> a4[HTTP: clear today's slot] --> a5[HTTP: append all rows<br/>in one request]
+  end
+  subgraph D["2 - Diff + pulse (09:05)"]
+    b1[Schedule] --> b2[HTTP: read today slot] --> b3[HTTP: read yesterday slot]
+    b3 --> b4[Code: date check + diff<br/>+ top movers] --> b5[Slack API: find today's<br/>KPI post] --> b6[Code: pick thread] --> b7[Slack: reply in thread]
+  end
+  subgraph E["3 - Error handler"]
+    c1[Error trigger] --> c2[Slack: DM owner]
+  end
 ```
 
-## How to run
+Node by node:
+
+1. **Daily snapshot**
+   - *Schedule* 08:55, a few minutes before the KPI post goes out.
+   - *HTTP Request* runs the saved BI query (header-auth credential).
+   - *Code: row-count guard* throws if the extract has fewer rows than expected. The
+     old slot stays as it was, and the error handler sends a DM.
+   - *Clear* + *append* write the slot for today (`day_DD`). Every row starts with the
+     snapshot date. The append is a single `values:append` call - one request per row
+     hit the API rate limit at a few thousand rows.
+2. **Diff + pulse**
+   - *Read* today's and yesterday's slots.
+   - *Code: date check + diff* first checks the dates inside both slots. If either is
+     stale it throws, because no message is better than a wrong one. Then it classifies
+     with the same rules as `src/diff.py`.
+   - *Find today's KPI post* (`conversations.history`) + *pick thread*: the pulse goes
+     in the thread of the morning revenue post, or in the channel if that post isn't
+     there yet.
+3. **Error handler** - *Error Trigger* -> Slack DM with the workflow name, error and a
+   link to the execution.
+
+Things that cost me time when setting it up:
+
+- Header-auth credentials: the **Name** field is the header name (e.g. `x-api-key`),
+  not a label for the credential.
+- Turn on *Response -> Never error* on HTTP nodes while building; otherwise n8n
+  swallows the API's real error message.
+- If the rules live in Python **and** in a Code node, run both on the same snapshot and
+  compare category totals before trusting either.
+
+The JSON files in `automation/n8n/` are generated by `build_workflows.py` from the JS in
+`automation/n8n/js/`. Import them, then pick your own credentials on the HTTP and Slack
+nodes. Env vars used: `BI_BASE_URL`, `REVENUE_QUESTION_ID`, `SNAPSHOT_SHEET_ID`,
+`PULSE_CHANNEL_ID`, `ALERT_USER_ID`.
+
+## The Slack pulse
+
+```
+Revenue movers - 2026-03-18 vs 2026-03-17 (yesterday)
+ARR 2,331,546 (net +39,866)
+🟢 new - 3 accounts, +76,997
+      company_132 +75,288, company_133 +900, company_134 +809
+⬆️ upgrade - 1 accounts, +1,488
+⬇️ downgrade - 2 accounts, -22,045
+🔴 churn - 2 accounts, -5,763
+💱 fx only - 24 accounts, -10,812 (exchange rate, no plan change)
+Bridge check: OK | annual value = monthly x 12 | top 5 per category
+```
+
+The Python version (`python src/main.py pulse ...`) does the same as the n8n flow and is
+handy for testing. It's dry-run by default and writes `pulse_preview.json`.
+
+## Run it
+
 ```bash
 pip install -r requirements.txt
 python data/generate_dummy_data.py
-python src/main.py diff --baseline month-start --today 2026-03-18
-python src/main.py diff --baseline yesterday   --today 2026-03-18
-python src/simulate_days.py                        # guard demo on a copy of the store
-python src/main.py snapshot --today 2026-03-18     # real job: overwrites the stale day_18 slot
-```
-`--baseline` is mandatory: the tool refuses to guess which comparison you meant.
-The `snapshot` command writes into `data/snapshots` (re-run the generator to reset it);
-use `simulate_days.py` if you only want to watch the guards.
-
-## Example output (dummy data)
-Month-start vs 2026-03-18 summary:
-
-| category | accounts | annual diff | price effect | FX effect |
-|---|---:|---:|---:|---:|
-| new | 10 | 216,196 | 216,196 | 0 |
-| upgrade | 13 | 130,862 | 131,868 | -1,006 |
-| downgrade | 3 | -12,613 | -12,443 | -170 |
-| churn | 10 | -43,056 | -43,056 | 0 |
-| fx_only | 20 | -12,479 | 0 | -12,479 |
-| unchanged | 73 | 0 | 0 | 0 |
-| **total** | 129 | 278,910 | 292,565 | -13,655 |
-
-Bridge check: baseline ARR + total diff = current ARR -> OK.
-Without the FX split, the 20 `fx_only` accounts would have been reported as downgrades.
-
-Guard simulation (`python src/simulate_days.py`):
-```
-03-18 08:55 scheduled run        OK: 119 rows -> day_18.csv
-03-18 09:30 manual re-run        SKIP: snapshot for today already taken
-03-19 08:55 partial extract      ABORT: only 50 rows (< 100), slot left untouched
-03-19 09:10 retry, file locked   PENDING: ... parked in pending/ for the next run
-03-20 08:55 scheduled run        flushed pending ['2026-03-19']; OK: 119 rows -> day_20.csv
-diff on 2026-03-15 vs yesterday  -> WARNING: slot for 2026-03-14 is missing or stale;
-                                    using 2026-03-01 instead - this diff covers 14 days
+python src/main.py diff  --baseline month-start --today 2026-03-18
+python src/main.py diff  --baseline yesterday   --today 2026-03-18
+python src/main.py pulse --baseline yesterday   --today 2026-03-18     # dry-run
+python src/simulate_days.py                    # replays 5 days so every guard fires
+python docs/build_site.py                      # rebuild the walkthrough page
 ```
 
-## Validation / lessons learned
-- **Trust the marker, not the file name.** Re-used day-of-month slots are convenient but
-  ambiguous; a date stored inside the snapshot is the only reliable label.
-- **A missing snapshot must be loud.** Silent scheduler failures were the main source of
-  wrong "daily" numbers; a non-zero exit + alert, and a diff that states its real span,
-  fixed that.
-- **An empty or partial extract is not churn.** Abort below a row-count floor instead of
-  publishing a list of fake churned accounts.
-- **Separate FX from price.** Classify on the contract amount; report currency effects on
-  their own line.
-- **Batch writes.** When the destination is a spreadsheet or API, append all rows in one
-  request; one request per row hits rate limits with a few thousand rows.
-- Keep the diff rules in one place; if they are re-implemented inside a workflow tool,
-  test both against the same input and compare the totals.
+`--baseline` is required on purpose - "compared to what?" changes the answer completely.
+To really post, fill `.env.example` and add `--send`.
 
-## Tech stack
-Python, pandas, openpyxl (optional), cron / n8n-style scheduler. Data generation uses only
-the standard library.
+## Files
+
+```
+data/                      generator, live extract, daily snapshot slots
+src/diff.py                compare, classify, FX split, top 15, summary
+src/snapshot.py            snapshot job + guards + baseline lookup
+src/pulse.py               Slack message; slack_client.py sends it
+src/main.py                CLI: snapshot | diff | pulse
+src/simulate_days.py       guard demo on a copy of the snapshot store
+automation/n8n/            workflow JSON, the JS used in Code nodes, generator
+automation/crontab.example the same schedule without n8n
+docs/                      walkthrough page
+```
+
+Python, pandas, openpyxl, n8n, Slack API, Chart.js (walkthrough page).
