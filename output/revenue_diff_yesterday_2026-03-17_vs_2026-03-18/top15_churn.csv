@@ -1,0 +1,3 @@
+account_id,plan_tier,currency,category,annual_base,annual_now,annual_diff,price_effect,fx_effect
+company_077,growth,FOREIGN,churn,5162.64,0.0,-5162.64,-5162.64,0.0
+company_060,starter,HOME,churn,600.0,0.0,-600.0,-600.0,0.0

@@ -1,0 +1,3 @@
+account_id,plan_tier,currency,category,annual_base,annual_now,annual_diff,price_effect,fx_effect
+company_130,enterprise,FOREIGN,downgrade,63233.520000000004,42909.600000000006,-20323.92,-18388.2,-1935.72
+company_048,growth,FOREIGN,downgrade,3339.84,1618.8000000000002,-1721.04,-1618.8,-102.24

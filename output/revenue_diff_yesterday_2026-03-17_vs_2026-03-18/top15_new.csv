@@ -1,0 +1,4 @@
+account_id,plan_tier,currency,category,annual_base,annual_now,annual_diff,price_effect,fx_effect
+company_132,enterprise,HOME,new,0.0,75288.0,75288.0,75288.0,0.0
+company_133,starter,HOME,new,0.0,900.0,900.0,900.0,0.0
+company_134,starter,FOREIGN,new,0.0,809.4000000000001,809.4000000000001,809.4,0.0

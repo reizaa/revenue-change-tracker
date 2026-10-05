@@ -1,0 +1,4 @@
+account_id,plan_tier,currency,category,annual_base,annual_now,annual_diff,price_effect,fx_effect
+company_045,scale,HOME,downgrade,19380.0,9696.0,-9684.0,-9684.0,0.0
+company_048,growth,FOREIGN,downgrade,3408.0,1618.8000000000002,-1789.1999999999998,-1618.8,-170.4
+company_070,growth,HOME,downgrade,3804.0,2664.0,-1140.0,-1140.0,0.0

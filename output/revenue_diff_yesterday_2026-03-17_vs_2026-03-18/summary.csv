@@ -1,0 +1,8 @@
+category,accounts,annual_diff,price_effect,fx_effect
+new,3,76997.4,76997.4,0.0
+upgrade,1,1488.0,1488.0,0.0
+downgrade,2,-22044.96,-20007.0,-2037.96
+churn,2,-5762.64,-5762.64,0.0
+fx_only,24,-10811.88,0.0,-10811.88
+unchanged,89,0.0,0.0,0.0
+TOTAL,121,39865.92,52715.76,-12849.84

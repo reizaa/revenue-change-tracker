@@ -1,0 +1,5 @@
+# Example schedule (server time zone = business time zone).
+# The snapshot runs first; the diff runs 10 minutes later and refuses to use a
+# baseline whose snapshot_date marker does not match the expected day.
+55 8 * * *  cd /opt/revenue-change-tracker && python src/main.py snapshot          || ./automation/notify_failure.sh snapshot
+5  9 * * *  cd /opt/revenue-change-tracker && python src/main.py diff --baseline yesterday || ./automation/notify_failure.sh diff

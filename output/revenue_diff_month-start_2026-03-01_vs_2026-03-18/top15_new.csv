@@ -1,0 +1,11 @@
+account_id,plan_tier,currency,category,annual_base,annual_now,annual_diff,price_effect,fx_effect
+company_132,enterprise,HOME,new,0.0,75288.0,75288.0,75288.0,0.0
+company_126,enterprise,FOREIGN,new,0.0,64444.200000000004,64444.200000000004,64444.2,0.0
+company_130,enterprise,FOREIGN,new,0.0,42909.600000000006,42909.600000000006,42909.6,0.0
+company_129,scale,HOME,new,0.0,15492.0,15492.0,15492.0,0.0
+company_125,growth,HOME,new,0.0,5184.0,5184.0,5184.0,0.0
+company_131,growth,FOREIGN,new,0.0,4161.0,4161.0,4161.0,0.0
+company_127,growth,HOME,new,0.0,3528.0,3528.0,3528.0,0.0
+company_128,growth,HOME,new,0.0,3480.0,3480.0,3480.0,0.0
+company_133,starter,HOME,new,0.0,900.0,900.0,900.0,0.0
+company_134,starter,FOREIGN,new,0.0,809.4000000000001,809.4000000000001,809.4,0.0
