@@ -1,5 +1,11 @@
 # revenue-change-tracker
 
+[![Live walkthrough](https://img.shields.io/badge/Live-Walkthrough-2a78d6?style=for-the-badge)](https://reizaa.github.io/revenue-change-tracker/)
+[![Portfolio](https://img.shields.io/badge/Back%20to-Portfolio-0f766e?style=for-the-badge)](https://reizaa.github.io/data-portfolio/)
+[![Dummy data](https://img.shields.io/badge/Data-100%25%20dummy-f59e0b?style=for-the-badge)](https://reizaa.github.io/revenue-change-tracker/#data-profile)
+
+**Live, interactive walkthrough:** https://reizaa.github.io/revenue-change-tracker/ (baseline switch, top-mover filters, guard replay, data profile)
+
 Every morning a recurring-revenue number goes out to the team, and the first reply is
 always *"it moved - because of whom?"*. This compares today's revenue per account with
 a previous snapshot (yesterday or start of month), sorts every account into
